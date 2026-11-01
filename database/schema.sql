@@ -1,0 +1,1 @@
+-- Backend team: add SAP HANA-compatible table definitions here.
