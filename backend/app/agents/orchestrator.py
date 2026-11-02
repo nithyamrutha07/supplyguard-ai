@@ -14,6 +14,26 @@ from app.agents.compliance_agent import validate_recovery_options
 def run_recovery_workflow(scenario: dict) -> dict:
     """Run all agents and return one consolidated recovery assessment."""
 
+    if not isinstance(scenario, dict):
+        raise ValueError("scenario must be a dictionary.")
+
+    required_units = scenario.get("required_units", 0)
+    delay_cost_per_day = scenario.get("delay_cost_per_day", 1000)
+
+    if (
+        not isinstance(required_units, (int, float))
+        or isinstance(required_units, bool)
+        or required_units <= 0
+    ):
+        raise ValueError("required_units must be a positive number.")
+
+    if (
+        not isinstance(delay_cost_per_day, (int, float))
+        or isinstance(delay_cost_per_day, bool)
+        or delay_cost_per_day < 0
+    ):
+        raise ValueError("delay_cost_per_day must be a non-negative number.")
+
     # Step 1: Detect disruptions.
     disruption_result = detect_disruptions(scenario)
 

@@ -46,7 +46,7 @@ def evaluate_logistics(scenario: dict) -> dict:
             "available_units": available,
             "cost_per_unit": cost_per_unit,
             "lead_time_days": lead_time,
-            "estimated_cost": round(available * cost_per_unit, 2),
+            "estimated_cost": round(min(available, scenario.get("required_units", available)) * cost_per_unit, 2),
             "status": "candidate",
         })
 
