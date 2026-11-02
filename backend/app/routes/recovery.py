@@ -1,12 +1,13 @@
 
-# Recovery and approval API routes.
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Literal
 
 from app.database.repositories import get_recovery_plans
 from app.database.hana import get_connection
+from app.agents.orchestrator import run_recovery_workflow
+
 
 router = APIRouter(prefix="/api", tags=["Recovery"])
 
@@ -15,15 +16,22 @@ class RecoveryDecision(BaseModel):
     decision: Literal["APPROVED", "REJECTED"]
 
 
+class RecoveryAnalysisRequest(BaseModel):
+    scenario: dict
+
+
+# 1. Get all existing recovery plans
 @router.get("/recovery")
 def read_recovery_plans():
     try:
         data = get_recovery_plans()
+
         return {
             "success": True,
             "count": len(data),
             "data": data
         }
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -31,6 +39,30 @@ def read_recovery_plans():
         )
 
 
+# 2. Analyze a scenario and generate a recovery recommendation
+@router.post("/recovery/analyze")
+def analyze_recovery(request: RecoveryAnalysisRequest):
+    try:
+        result = run_recovery_workflow(request.scenario)
+
+        # Return the workflow result directly so that
+        # status, recommendation, and other fields are top-level.
+        return result
+
+    except (TypeError, ValueError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Recovery analysis failed: {str(e)}"
+        )
+
+
+# 3. Approve or reject an existing recovery plan
 @router.put("/recovery/{plan_id}/decision")
 def update_recovery_decision(
     plan_id: int,
@@ -85,6 +117,8 @@ def update_recovery_decision(
         }
 
     except HTTPException:
+        if connection:
+            connection.rollback()
         raise
 
     except Exception as e:
@@ -99,5 +133,6 @@ def update_recovery_decision(
     finally:
         if cursor:
             cursor.close()
+
         if connection:
             connection.close()
