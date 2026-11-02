@@ -1,8 +1,5 @@
-# Coordinate agent workflow here.
 
-"""Coordinate SupplyGuard AI's disruption-to-recovery workflow."""
-
-from copy import deepcopy
+"""Coordinate the five-agent SupplyGuard AI workflow."""
 
 from app.agents.disruption_agent import detect_disruptions
 from app.agents.impact_agent import analyze_impact
@@ -12,72 +9,72 @@ from app.agents.compliance_agent import validate_recovery_options
 
 
 def run_recovery_workflow(scenario: dict) -> dict:
-    """Run all agents and return one consolidated recovery assessment."""
 
-    # Step 1: Detect disruptions.
+    # Agent 1: Detect disruptions
     disruption_result = detect_disruptions(scenario)
+    disruptions = disruption_result.get("disruptions", [])
 
-    # Step 2: Trace affected factories and customer orders.
+    # Agent 2: Analyze business impact
     impact_result = analyze_impact(scenario, disruption_result)
 
-    # Step 3: Prepare logistics inputs from the detected disruptions.
-    logistics_scenario = deepcopy(scenario)
+    # Agent 3: Prepare logistics inputs
+    logistics_scenario = dict(scenario)
 
+    # Include materials detected as having low inventory
     detected_materials = {
         item["material_id"]
-        for item in disruption_result["disruptions"]
-        if item["type"] == "low_inventory"
+        for item in disruptions
+        if item.get("type") == "low_inventory"
+        and item.get("material_id")
     }
 
-    needed_materials = set(
-        logistics_scenario.get("needed_materials", [])
+    existing_materials = set(
+        scenario.get("needed_materials", [])
     )
+
     logistics_scenario["needed_materials"] = sorted(
-        needed_materials | detected_materials
+        existing_materials | detected_materials
     )
 
-    detected_failed_suppliers = {
+    # Exclude disrupted suppliers from alternatives
+    detected_suppliers = {
         item["supplier"]
-        for item in disruption_result["disruptions"]
-        if item["type"] == "supplier_failure"
+        for item in disruptions
+        if item.get("supplier")
     }
 
-    disrupted_suppliers = set(
-        logistics_scenario.get("disrupted_suppliers", [])
-    )
     logistics_scenario["disrupted_suppliers"] = sorted(
-        disrupted_suppliers | detected_failed_suppliers
+        set(scenario.get("disrupted_suppliers", []))
+        | detected_suppliers
     )
 
     logistics_result = evaluate_logistics(logistics_scenario)
 
-    # Step 4: Compare recovery options.
-    required_units = scenario.get("required_units", 0)
-    delay_cost_per_day = scenario.get("delay_cost_per_day", 1000)
-
+    # Agent 4: Generate recovery options
     recovery_result = generate_recovery_plan(
         logistics_result,
-        required_units=required_units,
-        delay_cost_per_day=delay_cost_per_day,
+        required_units=scenario.get("required_units", 0),
+        delay_cost_per_day=scenario.get("delay_cost_per_day", 1000),
     )
 
-    # Step 5: Apply industry-specific compliance rules.
+    # Agent 5: Validate supplier compliance
     compliance_result = validate_recovery_options(
         recovery_result,
         scenario,
     )
 
-    # Step 6: Consolidate the recommendation.
-    recommendation = compliance_result["recommendation"]
+    recommendation = compliance_result.get("recommendation")
 
-    if recommendation is not None:
-        status = "recommendation_ready"
-    else:
-        status = "manual_review_required"
+    status = (
+        "recommendation_ready"
+        if recommendation is not None
+        else "manual_review_required"
+    )
 
     return {
         "status": status,
-        "industry": scenario.get("industry", "manufacturing"),
+        "industry": scenario.get("industry", "unknown"),
+        "data_source": scenario.get("data_source", "provided scenario"),
         "overall_risk": disruption_result["overall_risk"],
         "disruptions": disruption_result,
         "impact_analysis": impact_result,
