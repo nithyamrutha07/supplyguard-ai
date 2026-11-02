@@ -1,71 +1,90 @@
 # Coordinate agent workflow here.
 
-from app.database.repositories import (
-    get_disruptions,
-    get_suppliers,
-    get_inventory,
-    get_shipments,
-    get_recovery_plans
-)
+"""Coordinate SupplyGuard AI's disruption-to-recovery workflow."""
+
+from copy import deepcopy
+
+from app.agents.disruption_agent import detect_disruptions
+from app.agents.impact_agent import analyze_impact
+from app.agents.logistics_agent import evaluate_logistics
+from app.agents.recovery_agent import generate_recovery_plan
+from app.agents.compliance_agent import validate_recovery_options
 
 
-def run_supply_chain_workflow(incident_id: int):
-    # 1. Disruption detection
-    disruptions = get_disruptions()
+def run_recovery_workflow(scenario: dict) -> dict:
+    """Run all agents and return one consolidated recovery assessment."""
 
-    incident = next(
-        (item for item in disruptions
-         if item["INCIDENT_ID"] == incident_id),
-        None
+    # Step 1: Detect disruptions.
+    disruption_result = detect_disruptions(scenario)
+
+    # Step 2: Trace affected factories and customer orders.
+    impact_result = analyze_impact(scenario, disruption_result)
+
+    # Step 3: Prepare logistics inputs from the detected disruptions.
+    logistics_scenario = deepcopy(scenario)
+
+    detected_materials = {
+        item["material_id"]
+        for item in disruption_result["disruptions"]
+        if item["type"] == "low_inventory"
+    }
+
+    needed_materials = set(
+        logistics_scenario.get("needed_materials", [])
+    )
+    logistics_scenario["needed_materials"] = sorted(
+        needed_materials | detected_materials
     )
 
-    if incident is None:
-        return None
+    detected_failed_suppliers = {
+        item["supplier"]
+        for item in disruption_result["disruptions"]
+        if item["type"] == "supplier_failure"
+    }
 
-    # 2. Collect supply chain data
-    suppliers = get_suppliers()
-    inventory = get_inventory()
-    shipments = get_shipments()
-    plans = get_recovery_plans()
-
-    # 3. Find related recovery plan
-    recovery_plan = next(
-        (plan for plan in plans
-         if plan["INCIDENT_ID"] == incident_id),
-        None
+    disrupted_suppliers = set(
+        logistics_scenario.get("disrupted_suppliers", [])
+    )
+    logistics_scenario["disrupted_suppliers"] = sorted(
+        disrupted_suppliers | detected_failed_suppliers
     )
 
-    # 4. Prepare financial comparison
-    financial_analysis = None
+    logistics_result = evaluate_logistics(logistics_scenario)
 
-    if recovery_plan:
-        recovery_cost = float(recovery_plan["RECOVERY_COST"])
-        avoided_loss = float(recovery_plan["AVOIDED_LOSS"])
+    # Step 4: Compare recovery options.
+    required_units = scenario.get("required_units", 0)
+    delay_cost_per_day = scenario.get("delay_cost_per_day", 1000)
 
-        financial_analysis = {
-            "recovery_cost": recovery_cost,
-            "avoided_loss": avoided_loss,
-            "net_benefit": avoided_loss - recovery_cost
-        }
+    recovery_result = generate_recovery_plan(
+        logistics_result,
+        required_units=required_units,
+        delay_cost_per_day=delay_cost_per_day,
+    )
 
-    # 5. Prepare agent workflow result
+    # Step 5: Apply industry-specific compliance rules.
+    compliance_result = validate_recovery_options(
+        recovery_result,
+        scenario,
+    )
+
+    # Step 6: Consolidate the recommendation.
+    recommendation = compliance_result["recommendation"]
+
+    if recommendation is not None:
+        status = "recommendation_ready"
+    else:
+        status = "manual_review_required"
+
     return {
-        "success": True,
-        "incident": incident,
-        "workflow": [
-            "Disruption Detection",
-            "Impact Analysis",
-            "Logistics Assessment",
-            "Recovery Planning",
-            "Financial Evaluation",
-            "Compliance Review"
-        ],
-        "supply_chain_context": {
-            "suppliers_count": len(suppliers),
-            "inventory_records": len(inventory),
-            "shipments_count": len(shipments)
-        },
-        "recovery_plan": recovery_plan,
-        "financial_analysis": financial_analysis,
-        "requires_human_approval": True
+        "status": status,
+        "industry": scenario.get("industry", "manufacturing"),
+        "overall_risk": disruption_result["overall_risk"],
+        "disruptions": disruption_result,
+        "impact_analysis": impact_result,
+        "logistics": logistics_result,
+        "recovery_plan": recovery_result,
+        "compliance": compliance_result,
+        "recommendation": recommendation,
+        "requires_human_approval": True,
+        "recovery_executed": False,
     }
