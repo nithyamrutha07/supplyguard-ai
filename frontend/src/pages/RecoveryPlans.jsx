@@ -1,55 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldCheck, RefreshCw, CheckCircle2 } from 'lucide-react';
-
-const initialPlans = [
-  {
-    id: 1,
-    title: 'Alternative Supplier Activation',
-    issue: 'Critical supplier shortage',
-    action: 'Shift orders to backup suppliers',
-    priority: 'High',
-    status: 'In Progress',
-  },
-  {
-    id: 2,
-    title: 'Shipment Route Diversion',
-    issue: 'Weather-related shipment delay',
-    action: 'Use an alternative transportation route',
-    priority: 'High',
-    status: 'Pending',
-  },
-  {
-    id: 3,
-    title: 'Emergency Inventory Replenishment',
-    issue: 'Low raw material stock',
-    action: 'Replenish stock from nearby warehouse',
-    priority: 'Medium',
-    status: 'Completed',
-  },
-];
+import { getRecoveryPlans } from '../api';
 
 export default function RecoveryPlans() {
-  const [plans, setPlans] = useState(initialPlans);
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const updateStatus = (id) => {
-    setPlans(current =>
-      current.map(plan =>
-        plan.id === id
-          ? {
-              ...plan,
-              status:
-                plan.status === 'Pending'
-                  ? 'In Progress'
-                  : plan.status === 'In Progress'
-                  ? 'Completed'
-                  : 'Pending',
-            }
-          : plan
-      )
-    );
-  };
+  useEffect(() => {
+    getRecoveryPlans()
+      .then(data => {
+        setPlans(data.map(plan => ({
+          id: plan.PLAN_ID,
+          incidentId: plan.INCIDENT_ID,
+          action: plan.ACTION_DESCRIPTION,
+          cost: Number(plan.RECOVERY_COST) || 0,
+          avoidedLoss: Number(plan.AVOIDED_LOSS) || 0,
+          status: plan.PLAN_STATUS || 'Unknown'
+        })));
+        setError('');
+      })
+      .catch(err => {
+        console.error('Recovery API error:', err);
+        setError('Unable to load recovery plans. Check the backend server.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
-  const completed = plans.filter(p => p.status === 'Completed').length;
+  const completed = plans.filter(
+    p => p.status.toUpperCase() === 'COMPLETED'
+  ).length;
+
+  const active = plans.filter(
+    p => ['APPROVED', 'IN_PROGRESS'].includes(p.status.toUpperCase())
+  ).length;
 
   return (
     <div className="recovery-page">
@@ -57,6 +41,9 @@ export default function RecoveryPlans() {
         <h1>Recovery & Resilience Plans</h1>
         <p>Response strategies to minimise supply-chain disruptions</p>
       </div>
+
+      {loading && <p className="subheading">Loading live recovery plans...</p>}
+      {error && <p className="subheading">{error}</p>}
 
       <div className="inventory-stats">
         <div className="inventory-stat">
@@ -67,8 +54,8 @@ export default function RecoveryPlans() {
 
         <div className="inventory-stat">
           <RefreshCw />
-          <span>Active Plans</span>
-          <h2>{plans.filter(p => p.status === 'In Progress').length}</h2>
+          <span>Approved Plans</span>
+          <h2>{active}</h2>
         </div>
 
         <div className="inventory-stat">
@@ -83,12 +70,12 @@ export default function RecoveryPlans() {
           <div className="recovery-card" key={plan.id}>
             <div className="recovery-top">
               <div>
-                <h3>{plan.title}</h3>
-                <p>Disruption: {plan.issue}</p>
+                <h3>Recovery Plan #{plan.id}</h3>
+                <p>Related incident: #{plan.incidentId}</p>
               </div>
 
-              <span className={`severity ${plan.priority.toLowerCase()}`}>
-                {plan.priority} Priority
+              <span className={`recovery-status ${plan.status.toLowerCase().replace(' ', '-')}`}>
+                {plan.status}
               </span>
             </div>
 
@@ -97,17 +84,21 @@ export default function RecoveryPlans() {
               <strong>{plan.action}</strong>
             </div>
 
-            <div className="recovery-bottom">
-              <span className={`recovery-status ${plan.status.toLowerCase().replace(' ', '-')}`}>
-                {plan.status}
-              </span>
+            <div className="recovery-action">
+              <span>Recovery cost</span>
+              <strong>₹{plan.cost.toLocaleString('en-IN')}</strong>
+            </div>
 
-              <button onClick={() => updateStatus(plan.id)}>
-                Update Status
-              </button>
+            <div className="recovery-action">
+              <span>Estimated loss avoided</span>
+              <strong>₹{plan.avoidedLoss.toLocaleString('en-IN')}</strong>
             </div>
           </div>
         ))}
+
+        {!loading && plans.length === 0 && (
+          <p className="empty-state">No recovery plans found.</p>
+        )}
       </div>
     </div>
   );

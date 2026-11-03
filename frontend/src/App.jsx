@@ -1,5 +1,6 @@
 import SupplyMap from './maps/SupplyMap';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getDashboard } from './api';
 import DependencyGraph from './dashboard/DependencyGraph';
 import Suppliers from './pages/Suppliers';
 import Inventory from './pages/Inventory';
@@ -62,7 +63,21 @@ function App() {
   const [filter, setFilter] = useState('All');
   const [showRisk, setShowRisk] = useState(true);
   const [notice, setNotice] = useState('');
+  const [dashboard, setDashboard] = useState(null);
+const [dashboardError, setDashboardError] = useState('');
 
+useEffect(() => {
+  getDashboard()
+    .then(data => {
+      setDashboard(data);
+      setDashboardError('');
+    })
+    .catch(error => {
+      console.error('Dashboard API error:', error);
+      setDashboardError('Unable to load live dashboard data.');
+    });
+}, []);
+ 
   const notify = (message) => {
     setNotice(message);
     setTimeout(() => setNotice(''), 2500);
@@ -108,15 +123,15 @@ function App() {
 
       <div className="demo-banner">
         <Activity size={17} />
-        <span>DEMO ENVIRONMENT — Displaying illustrative sample data, not live operations.</span>
+        <span>CONNECTED TO BACKEND — Live operational summary.</span>
       </div>
 
       <div className="metrics-grid">
-        <Metric title="Active Shipments" value="248" change="+12.8%" positive icon={Truck} color="cyan" />
-        <Metric title="At-Risk Shipments" value="18" change="-4.2%" positive icon={AlertTriangle} color="orange" />
-        <Metric title="Active Suppliers" value="86" change="+3.1%" positive icon={Users} color="purple" />
-        <Metric title="On-Time Delivery" value="94.6%" change="+2.4%" positive icon={CheckCircle} color="green" />
-      </div>
+  <Metric title="Total Shipments" value={dashboard?.total_shipments ?? '—'} change="Live backend data" positive icon={Truck} color="cyan" />
+  <Metric title="Delayed Shipments" value={dashboard?.delayed_shipments ?? '—'} change="Requires attention" positive={false} icon={AlertTriangle} color="orange" />
+  <Metric title="Total Suppliers" value={dashboard?.total_suppliers ?? '—'} change="Live backend data" positive icon={Users} color="purple" />
+  <Metric title="Open Disruptions" value={dashboard?.open_disruptions ?? '—'} change="Requires attention" positive={false} icon={Activity} color="green" />
+</div>
 
       <div className="charts-grid">
         <div className="panel chart-panel">

@@ -1,35 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Package, AlertTriangle } from 'lucide-react';
-
-const initialItems = [
-  { id: 1, name: 'Steel Sheets', category: 'Raw Material', warehouse: 'Bengaluru', stock: 820, minimum: 300 },
-  { id: 2, name: 'Microchips', category: 'Components', warehouse: 'Chennai', stock: 120, minimum: 250 },
-  { id: 3, name: 'Copper Wire', category: 'Raw Material', warehouse: 'Mumbai', stock: 540, minimum: 200 },
-  { id: 4, name: 'Circuit Boards', category: 'Components', warehouse: 'Hyderabad', stock: 85, minimum: 150 },
-  { id: 5, name: 'Packaging Boxes', category: 'Packaging', warehouse: 'Pune', stock: 670, minimum: 200 },
-  { id: 6, name: 'Plastic Resin', category: 'Raw Material', warehouse: 'Bengaluru', stock: 190, minimum: 250 },
-];
+import { getInventory } from '../api';
 
 export default function Inventory() {
-  const [items] = useState(initialItems);
+  const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const lowStock = items.filter(item => item.stock < item.minimum).length;
+  useEffect(() => {
+    getInventory()
+      .then(data => {
+        const formatted = data.map(item => ({
+          id: item.INVENTORY_ID,
+          name: item.MATERIAL_NAME,
+          warehouse: `Warehouse ${item.WAREHOUSE_ID}`,
+          stock: Number(item.AVAILABLE_QUANTITY) || 0,
+          unitCost: Number(item.UNIT_COST) || 0
+        }));
+
+        setItems(formatted);
+        setError('');
+      })
+      .catch(err => {
+        console.error('Inventory API error:', err);
+        setError('Unable to load inventory. Check the backend server.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   const totalStock = items.reduce((sum, item) => sum + item.stock, 0);
 
   const filtered = items.filter(item => {
     const matchesSearch =
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.warehouse.toLowerCase().includes(search.toLowerCase());
+      `${item.name} ${item.warehouse}`
+        .toLowerCase()
+        .includes(search.toLowerCase());
 
-    const matchesFilter =
-      filter === 'All' ||
-      (filter === 'Low Stock' && item.stock < item.minimum) ||
-      (filter === 'Healthy' && item.stock >= item.minimum);
-
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
+
+  const totalValue = items.reduce(
+    (sum, item) => sum + item.stock * item.unitCost,
+    0
+  );
 
   return (
     <div className="inventory-page">
@@ -39,6 +54,9 @@ export default function Inventory() {
           <p>Monitor stock levels across your supply chain</p>
         </div>
       </div>
+
+      {loading && <p className="subheading">Loading live inventory...</p>}
+      {error && <p className="subheading">{error}</p>}
 
       <div className="inventory-stats">
         <div className="inventory-stat">
@@ -53,10 +71,10 @@ export default function Inventory() {
           <h2>{totalStock.toLocaleString()}</h2>
         </div>
 
-        <div className="inventory-stat warning">
+        <div className="inventory-stat">
           <AlertTriangle />
-          <span>Low Stock Alerts</span>
-          <h2>{lowStock}</h2>
+          <span>Total Inventory Value</span>
+          <h2>₹{totalValue.toLocaleString('en-IN')}</h2>
         </div>
       </div>
 
@@ -71,11 +89,7 @@ export default function Inventory() {
             />
           </div>
 
-          <select value={filter} onChange={e => setFilter(e.target.value)}>
-            <option>All</option>
-            <option>Low Stock</option>
-            <option>Healthy</option>
-          </select>
+          <span className="subheading">Live backend records</span>
         </div>
 
         <div className="table-wrap">
@@ -83,37 +97,29 @@ export default function Inventory() {
             <thead>
               <tr>
                 <th>ITEM</th>
-                <th>CATEGORY</th>
-                <th>WAREHOUSE</th>
+                <th>WAREHOUSE ID</th>
                 <th>AVAILABLE STOCK</th>
-                <th>MINIMUM STOCK</th>
-                <th>STATUS</th>
+                <th>UNIT COST</th>
+                <th>STOCK VALUE</th>
               </tr>
             </thead>
 
             <tbody>
-              {filtered.map(item => {
-                const isLow = item.stock < item.minimum;
-
-                return (
-                  <tr key={item.id}>
-                    <td><strong>{item.name}</strong></td>
-                    <td>{item.category}</td>
-                    <td>{item.warehouse}</td>
-                    <td>{item.stock.toLocaleString()}</td>
-                    <td>{item.minimum}</td>
-                    <td>
-                      <span className={`status ${isLow ? 'low' : 'high'}`}>
-                        {isLow ? 'Low Stock' : 'Healthy'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map(item => (
+                <tr key={item.id}>
+                  <td><strong>{item.name}</strong></td>
+                  <td>{item.warehouse}</td>
+                  <td>{item.stock.toLocaleString()}</td>
+                  <td>₹{item.unitCost.toLocaleString('en-IN')}</td>
+                  <td>
+                    ₹{(item.stock * item.unitCost).toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
-          {filtered.length === 0 && (
+          {!loading && filtered.length === 0 && (
             <p className="empty-state">No inventory items found.</p>
           )}
         </div>

@@ -1,38 +1,39 @@
+import { useState, useEffect } from 'react';
 import { AlertTriangle, ShieldAlert, Activity } from 'lucide-react';
-
-const disruptions = [
-  {
-    id: 1,
-    title: 'Microchip supply shortage',
-    supplier: 'Vertex Electronics',
-    location: 'Chennai',
-    severity: 'Critical',
-    impact: 'Production delay',
-    action: 'Activate alternative supplier',
-  },
-  {
-    id: 2,
-    title: 'Shipment delayed due to weather',
-    supplier: 'Apex Components',
-    location: 'Mumbai',
-    severity: 'High',
-    impact: 'Delivery delay',
-    action: 'Consider alternative route',
-  },
-  {
-    id: 3,
-    title: 'Low raw material inventory',
-    supplier: 'Nova Materials',
-    location: 'Bengaluru',
-    severity: 'Medium',
-    impact: 'Inventory shortage',
-    action: 'Schedule replenishment',
-  },
-];
+import { getDisruptions } from '../api';
 
 export default function Disruptions() {
-  const critical = disruptions.filter(d => d.severity === 'Critical').length;
-  const high = disruptions.filter(d => d.severity === 'High').length;
+  const [disruptions, setDisruptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getDisruptions()
+      .then(data => {
+        setDisruptions(data.map(item => ({
+          id: item.INCIDENT_ID,
+          title: item.DESCRIPTION || item.DISRUPTION_TYPE || 'Supply-chain disruption',
+          type: item.DISRUPTION_TYPE || 'General',
+          severity: item.SEVERITY || 'Unknown',
+          status: item.STATUS || 'Unknown',
+          impact: Number(item.ESTIMATED_LOSS) || 0
+        })));
+        setError('');
+      })
+      .catch(err => {
+        console.error('Disruptions API error:', err);
+        setError('Unable to load disruptions. Check the backend server.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const critical = disruptions.filter(
+    d => d.severity.toUpperCase() === 'CRITICAL'
+  ).length;
+
+  const high = disruptions.filter(
+    d => d.severity.toUpperCase() === 'HIGH'
+  ).length;
 
   return (
     <div className="disruptions-page">
@@ -40,6 +41,9 @@ export default function Disruptions() {
         <h1>Disruption Monitoring</h1>
         <p>Identify supply-chain threats and monitor their impact</p>
       </div>
+
+      {loading && <p className="subheading">Loading live disruptions...</p>}
+      {error && <p className="subheading">{error}</p>}
 
       <div className="inventory-stats">
         <div className="inventory-stat">
@@ -67,8 +71,9 @@ export default function Disruptions() {
             <div className="disruption-top">
               <div>
                 <h3>{item.title}</h3>
-                <p>{item.supplier} · {item.location}</p>
+                <p>Incident #{item.id} · {item.type}</p>
               </div>
+
               <span className={`severity ${item.severity.toLowerCase()}`}>
                 {item.severity}
               </span>
@@ -76,16 +81,21 @@ export default function Disruptions() {
 
             <div className="disruption-details">
               <div>
-                <span>Business impact</span>
-                <strong>{item.impact}</strong>
+                <span>Estimated business loss</span>
+                <strong>₹{item.impact.toLocaleString('en-IN')}</strong>
               </div>
+
               <div>
-                <span>Recommended action</span>
-                <strong>{item.action}</strong>
+                <span>Incident status</span>
+                <strong>{item.status}</strong>
               </div>
             </div>
           </div>
         ))}
+
+        {!loading && disruptions.length === 0 && (
+          <p className="empty-state">No disruptions found.</p>
+        )}
       </div>
     </div>
   );
