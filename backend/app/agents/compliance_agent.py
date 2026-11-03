@@ -1,37 +1,45 @@
-# Validate industry-specific rules and constraints.
-
-"""Validate recovery options against industry-specific rules."""
+"""Validate recovery recommendations against supplier compliance rules."""
 
 
 def validate_recovery_options(
     recovery_result: dict,
     scenario: dict,
 ) -> dict:
-    """Filter recovery options using configured supplier approval rules."""
 
-    industry = scenario.get("industry", "manufacturing").lower()
+    industry = str(
+        scenario.get("industry", "unknown")
+    ).lower()
 
-    approved_suppliers = set(
-        scenario.get("approved_suppliers", [])
-    )
-    prohibited_suppliers = set(
-        scenario.get("prohibited_suppliers", [])
-    )
+    approved_suppliers = {
+        name.lower()
+        for name in scenario.get("approved_suppliers", [])
+    }
+
+    prohibited_suppliers = {
+        name.lower()
+        for name in scenario.get("prohibited_suppliers", [])
+    }
 
     valid_options = []
     rejected_options = []
 
     for option in recovery_result.get("options", []):
         supplier = option.get("supplier", "unknown")
+        supplier_key = supplier.lower()
         reasons = []
 
-        if supplier in prohibited_suppliers:
+        if supplier_key in prohibited_suppliers:
             reasons.append("Supplier is explicitly prohibited.")
 
-        if industry == "pharmaceuticals" and supplier not in approved_suppliers:
-            reasons.append(
-                "Pharmaceutical supplier is not on the approved supplier list."
-            )
+        if industry in {"pharmaceutical", "pharmaceuticals"}:
+            if not approved_suppliers:
+                reasons.append(
+                    "Approved supplier records are unavailable."
+                )
+            elif supplier_key not in approved_suppliers:
+                reasons.append(
+                    "Supplier is not on the approved supplier list."
+                )
 
         if reasons:
             rejected_options.append({
@@ -42,18 +50,19 @@ def validate_recovery_options(
             valid_options.append(option)
 
     valid_options.sort(
-        key=lambda option: (
-            option.get("estimated_total_cost", float("inf")),
-            option.get("lead_time_days", float("inf")),
+        key=lambda item: item.get(
+            "estimated_total_cost", float("inf")
         )
     )
 
-    if valid_options:
-        recommendation = valid_options[0]
+    recommendation = valid_options[0] if valid_options else None
+
+    if recommendation:
         status = "compliant_options_available"
-    else:
-        recommendation = None
+    elif rejected_options:
         status = "no_compliant_options"
+    else:
+        status = "manual_review_required"
 
     return {
         "industry": industry,

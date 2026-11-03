@@ -1,81 +1,75 @@
-# Identify downstream factories, orders and inventory affected.
-
-"""Identify factories and customer orders affected by disruptions."""
-
-from typing import Any
+"""Analyze supply-chain impact using actual SAP HANA records."""
 
 
 def analyze_impact(
-    scenario: dict[str, Any],
-    disruption_result: dict[str, Any],
-) -> dict[str, Any]:
-    """Match disrupted materials and suppliers to factories and orders."""
+    scenario: dict,
+    disruption_result: dict,
+) -> dict:
 
-    disrupted_materials = {
-        item.get("material_id")
-        for item in disruption_result.get("disruptions", [])
-        if item.get("type") == "low_inventory"
-    }
+    incident = scenario.get("incident", {})
+    incident_type = str(
+        incident.get("incident_type", "")
+    ).upper()
 
     disrupted_suppliers = {
-        item.get("supplier")
-        for item in disruption_result.get("disruptions", [])
-        if item.get("type") == "supplier_failure"
+        name.lower()
+        for name in scenario.get("disrupted_suppliers", [])
     }
 
-    delayed_shipments = {
-        item.get("shipment_id")
-        for item in disruption_result.get("disruptions", [])
-        if item.get("type") == "shipment_delay"
-    }
+    affected_shipments = []
 
-    affected_factories = []
-    affected_orders = []
-
-    for factory in scenario.get("factories", []):
-        materials = set(factory.get("required_materials", []))
-
-        if materials & disrupted_materials:
-            affected_factories.append({
-                "factory_id": factory.get("factory_id", "unknown"),
-                "reason": "Requires material with low inventory.",
-                "affected_materials": sorted(materials & disrupted_materials),
-            })
-
-    for order in scenario.get("orders", []):
-        order_materials = set(order.get("required_materials", []))
-        supplier = order.get("supplier")
-        shipment_id = order.get("shipment_id")
-
-        reasons = []
-
-        matching_materials = order_materials & disrupted_materials
-        if matching_materials:
-            reasons.append("Low inventory: " + ", ".join(sorted(matching_materials)))
+    # Identify shipments belonging to the disrupted supplier.
+    for shipment in scenario.get("shipments", []):
+        supplier = str(
+            shipment.get("supplier", "")
+        ).lower()
 
         if supplier in disrupted_suppliers:
-            reasons.append(f"Supplier failure: {supplier}")
-
-        if shipment_id in delayed_shipments:
-            reasons.append(f"Shipment delayed: {shipment_id}")
-
-        if reasons:
-            affected_orders.append({
-                "order_id": order.get("order_id", "unknown"),
-                "customer": order.get("customer", "unknown"),
-                "reasons": reasons,
-                "estimated_value": order.get("order_value", 0),
+            affected_shipments.append({
+                "shipment_id": shipment.get("shipment_id"),
+                "supplier": shipment.get("supplier"),
+                "status": shipment.get("status"),
+                "delay_days": shipment.get("delay_days", 0),
+                "reason": "Shipment belongs to the disrupted supplier.",
             })
 
-    total_exposed_value = sum(
-        order["estimated_value"] for order in affected_orders
+    # Identify inventory records matching the incident description.
+    description = str(
+        incident.get("description", "")
+    ).lower()
+
+    affected_inventory = []
+
+    for item in scenario.get("inventory", []):
+        material = str(item.get("material_id", ""))
+
+        if material.lower() in description:
+            affected_inventory.append({
+                "material": material,
+                "available_units": item.get("available_units"),
+            })
+
+    delayed_count = sum(
+        1
+        for shipment in affected_shipments
+        if shipment.get("status") == "delayed"
     )
 
     return {
-        "affected_factory_count": len(affected_factories),
-        "affected_order_count": len(affected_orders),
-        "affected_factories": affected_factories,
-        "affected_orders": affected_orders,
-        "total_exposed_order_value": total_exposed_value,
-        "currency": scenario.get("currency", "USD"),
+        "incident_id": incident.get("incident_id"),
+        "incident_type": incident_type,
+        "affected_supplier_count": len(disrupted_suppliers),
+        "affected_suppliers": sorted(disrupted_suppliers),
+        "affected_shipment_count": len(affected_shipments),
+        "delayed_shipment_count": delayed_count,
+        "affected_shipments": affected_shipments,
+        "affected_inventory": affected_inventory,
+        "affected_factory_count": 0,
+        "affected_order_count": 0,
+        "impact_data_note": (
+            "Factory dependencies and customer orders are not "
+            "stored in the current database schema."
+        ),
+        "estimated_loss": incident.get("estimated_loss", 0),
+        "currency": "INR",
     }
